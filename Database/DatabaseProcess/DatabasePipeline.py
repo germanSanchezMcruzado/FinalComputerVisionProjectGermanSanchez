@@ -5,12 +5,11 @@ import Database.DatabaseProcess.DatabaseLoader
 
 
 class DatabasePipeline():
-    def __init__(self, processes, output_signature, batch_size):
+    def __init__(self, processes, output_signature):
         super().__init__()
         self.processes = processes
-        self.batch_size = batch_size
         self.output_signature = output_signature
-        self.generator = tf.data.Dataset.from_generator(output_signature=output_signature, generator=self.execute_pipeline_once, args=(self.batch_size,))
+        self.generator = tf.data.Dataset.from_generator(output_signature=output_signature, generator=self.execute_pipeline_once, args=(20,))
 
     def execute_pipeline_once(self, batch_size):
         """

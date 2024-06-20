@@ -38,3 +38,17 @@ class DataVisualizer:
         plt.title("Image")
         plt.axis('off')  # Hide axes
         plt.show()
+
+    @staticmethod
+    def show_gray_image(image):
+        """
+        Display a single image.
+
+        Parameters:
+        - image: Image to display.
+        """
+        plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
+        plt.imshow(image, cmap='gray')
+        plt.title("Image")
+        plt.axis('off')  # Hide axes
+        plt.show()

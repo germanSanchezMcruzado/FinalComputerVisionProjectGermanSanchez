@@ -1,112 +1,93 @@
 import tensorflow as tf
 import numpy as np
 import os
+from matplotlib import pyplot as plt
 
+# Data Visualization
 from DataVisualizer.DataVisualizer import DataVisualizer
+
+# Database Processing and Pipeline
 from Database.DatabaseProcess.DatabasePipeline import DatabasePipeline
-from Database.NYU.NYUDatabaseLoader import NYUDatabaseLoader
-from Database.NYU.NYUDatabaseSaver import NYUDatabaseSaver
-from Database.NYU.NYUDatabasePreprocessor import NYUDatabasePreprocessor
-from Database.NYU.NYUPreprocessedDatabasePreprocessor import NYUPreprocessedDatabasePreprocessor
-from Database.NYU.NYUPreprocessedDatabaseLoader import NYUPreprocessedDatabaseLoader
+
+# NYU Database Related Imports
+from Database.NYU.NYUPreprocessedDepthEstimationModelDatabaseLoader import NYUPreprocessedDepthEstimationModelDatabaseLoader
+from Database.NYU.NYUPreprocessedDepthEstimationModelDatabasePreprocessor import NYUPreprocessedDepthEstimationModelDatabasePreprocessor
+
+# Model
 from Models.DepthEstimationModel import DepthEstimationModel
-from Preprocessing.ImagePreprocessor import ImagePreprocessor
+
 
 os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
 
 
-def get_nyu_preprocessed_database_pipeline():
-    nyu_preprocessed_database_loader = NYUPreprocessedDatabaseLoader(
+def get_nyu_preprocessed_depth_estimation_database_pipeline():
+    nyu_preprocessed_depth_estimation_database_loader = NYUPreprocessedDepthEstimationModelDatabaseLoader(
         path=r"C:\Users\germa\PycharmProjects\ComputerVisionProject\Data\PreprocessedNYU",
         sample_container_paths=["PreprocessedImages"],
         verbose=False
     )
 
-    nyu_preprocessed_database_preprocessor = NYUPreprocessedDatabasePreprocessor(verbose=False)
+    nyu_preprocessed_depth_estimation_database_preprocessor = NYUPreprocessedDepthEstimationModelDatabasePreprocessor(verbose=False)
 
     nyu_preprocessed_database_pipeline = DatabasePipeline(
-        [nyu_preprocessed_database_loader, nyu_preprocessed_database_preprocessor],
+        [nyu_preprocessed_depth_estimation_database_loader, nyu_preprocessed_depth_estimation_database_preprocessor],
         output_signature=(
-            ((tf.TensorSpec(shape=(None, 4, 480, 640, 3), dtype=tf.float32, name=None),
-             tf.TensorSpec(shape=(None, 5, 480, 640, 3), dtype=tf.float32, name=None),
-             tf.TensorSpec(shape=(None, 480, 640, 3), dtype=tf.float32, name=None))
-             , tf.TensorSpec(shape=(None, 480, 640), dtype=tf.float32, name=None))
-        ), batch_size=10
+            tf.TensorSpec(shape=(None, 480, 640, 3), dtype=tf.float32, name=None),
+            tf.TensorSpec(shape=(None, 480, 640,1), dtype=tf.float32, name=None)
+        )
     )
 
     return nyu_preprocessed_database_pipeline
 
-def get_nyu_database_pipeline():
-    nyu_database_loader = NYUDatabaseLoader(
-        path=r"C:\Users\germa\PycharmProjects\ComputerVisionProject\Data\NYU",
-        sample_container_paths=["nyu_depth_v2_labeled.mat"]
-    )
-
-    nyu_database_saver = NYUDatabaseSaver(
-        database_path=r"C:\Users\germa\PycharmProjects\ComputerVisionProject\Data\PreprocessedNYU",
-        folder_paths=["PreprocessedImages"]
-    )
-
-    nyu_database_preprocessor = NYUDatabasePreprocessor()
-
-    #nyu_database_pipeline = DatabasePipeline([nyu_database_loader, nyu_database_preprocessor, nyu_database_saver])
-
-    #return nyu_database_pipeline
 
 def create_depth_estimation_model():
     # Define the model input shapes based on the dataset
-    input_shape_gaussian = (4, 480, 640, 3)
-    input_shape_edge = (5, 480, 640, 3)
     input_shape_original = (480, 640, 3)
 
-    model = DepthEstimationModel(input_shape_gaussian, input_shape_edge, input_shape_original)
+    model = DepthEstimationModel(input_shape=input_shape_original)
 
-    database_pipeline = get_nyu_preprocessed_database_pipeline()
+    database_pipeline = get_nyu_preprocessed_depth_estimation_database_pipeline()
     final_model, final_params = model.grid_search(database_pipeline, param_grid={
-            'optimizer': ['adam', 'rmsprop', 'sgd'],  # Different optimizers to try
-            'loss': ['mean_squared_error'],
-            'batch_size': [8],
-            'learning_rate': [0.001, 0.01],  # Different learning rates
-            'epochs': [3]  # Different numbers of epochs
+            'optimizer': ['adam'],  # Different optimizers to try
+            'batch_size': [3],
+            'learning_rate': [0.01],  # Different learning rates
+            'epochs': [5]  # Different numbers of epochs
         }, save_best_model=True, save_path=r"C:\Users\germa\PycharmProjects\ComputerVisionProject\Models\SavedModels\DepthEstimation")
     return
 
-def load_and_test_depth_estimation_model(path,pipeline):
-    # Define the model input shapes based on the dataset
-    input_shape_gaussian = (4, 480, 640, 3)
-    input_shape_edge = (5, 480, 640, 3)
-    input_shape_original = (480, 640, 3)
 
-    model = DepthEstimationModel(input_shape_gaussian, input_shape_edge, input_shape_original,path)
+def test_depth_estimation_model():
+    model = DepthEstimationModel(saved_path=r"C:\Users\germa\PycharmProjects\ComputerVisionProject\Models\SavedModels\DepthEstimation")
+    database_pipeline = get_nyu_preprocessed_depth_estimation_database_pipeline()
+    generator = iter(database_pipeline.generator)
+    for i in range(10):
+        data = next(generator)
+        predictions = model.predict(data[0])
 
-    test_data = pipeline.execute_pipeline_once(5)
-    for batch in test_data:
-        inputs, labels = batch
+        for j in range(len(data)):
+            pred = predictions[j]
+            pred = np.squeeze(pred,axis=-1)
 
-        # Convert inputs to tensors (assuming inputs is a tuple of tensors)
-        inputs_tensor1 = tf.convert_to_tensor(inputs[0], dtype=tf.float32)
-        inputs_tensor2 = tf.convert_to_tensor(inputs[1], dtype=tf.float32)
-        inputs_tensor3 = tf.convert_to_tensor(inputs[2], dtype=tf.float32)
+            gt = data[1][j]
 
-        # Convert labels to tensor
-        labels_array = np.array(labels)  # Convert PIL images to numpy arrays
-        labels_tensor = tf.convert_to_tensor(labels_array, dtype=tf.float32)
+            # Plotting
+            plt.subplot(1, 2, 1)
+            plt.title('Prediction')
+            plt.axis("off")
+            plt.imshow(pred, cmap=plt.get_cmap('inferno_r'))
 
-        # Evaluate the model
-        #loss = model.evaluate((inputs_tensor1, inputs_tensor2, inputs_tensor3), labels_tensor)
-        #print(f"Batch Loss: {loss}")
+            plt.subplot(1, 2, 2)
+            plt.title('Ground Truth')
+            plt.axis("off")
+            gt = np.squeeze(gt, axis=-1)
+            plt.imshow(gt, cmap=plt.get_cmap('inferno_r'))
 
-        #Predict
-        predictions = model.predict((inputs_tensor1, inputs_tensor2, inputs_tensor3))
-        for i,prediction in enumerate(predictions):
-            final = tf.squeeze(tf.convert_to_tensor(prediction, dtype=tf.float32),axis = -1)
-            DataVisualizer.show_image(final)
-            DataVisualizer.show_image(labels_tensor[i])
+            plt.show()
+
 
 
 
 if __name__ == "__main__":
     create_depth_estimation_model()
-    #load_and_test_depth_estimation_model("Models/SavedModels/DepthEstimation", get_nyu_preprocessed_database_pipeline())
-
+    test_depth_estimation_model()
 
